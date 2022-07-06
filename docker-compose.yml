@@ -1,0 +1,77 @@
+version: '3'
+
+services:
+
+  data-db:
+    image: neo4j:latest
+    container_name: asset-inventory-data-db
+    restart: unless-stopped
+    env_file: [.env]
+    ports:
+      - 7474:7474
+      - 7687:7687
+    volumes:
+      - ./db/data/data:/data
+      - ./db/data/logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "/var/lib/neo4j/bin/neo4j status"]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 60s  
+
+  web-db:
+    image: postgres:latest
+    container_name: asset-inventory-web-db
+    restart: always
+    command: 
+      - "postgres"
+      - "-c"
+      - "logging_collector=on"
+      - "-c"
+      - "log_directory=/var/log/postgresql/"
+      - "-c"
+      - "log_filename=postgresql.log"
+      - "-c"
+      - "log_statement=all"
+    env_file: [.env]
+    ports:
+      - 5432:5432
+    volumes:
+      - ./db/web/data:/var/lib/postgresql/data/
+      - ./db/web/logs:/var/log/postgresql/
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "web-db"]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 60s  
+
+  web:
+    image: python:latest
+    container_name: asset-inventory-web
+    restart: unless-stopped
+    env_file: [.env]
+    working_dir: /src/app
+    volumes:
+      - .:/src/app
+    ports:
+      - 80:8000
+    entrypoint: ["/bin/sh","-c"]
+    depends_on:
+      web-db:
+        condition: service_healthy
+      data-db:
+        condition: service_healthy
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+    command:
+      - |
+         apt-get update
+         apt-get install libgeos-dev -y
+         pip install poetry
+         poetry config virtualenvs.create false
+         poetry install --no-interaction --no-ansi
+         poetry run neomodel_remove_labels --db $NEO4J_CONNECTION_STRING
+         poetry run neomodel_install_labels ./web/graph_database/__init__.py --db $NEO4J_CONNECTION_STRING
+         poetry run uvicorn web:app --reload --host 0.0.0.0

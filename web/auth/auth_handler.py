@@ -1,4 +1,6 @@
 import os
+import random
+import string
 import time
 
 import jwt 
@@ -7,7 +9,7 @@ from typing import Dict
 
 from web.database.schemas.user import User
 
-JWT_SECRET = os.environ.get('JWT_SECRET')
+JWT_SECRET = os.environ['JWT_SECRET'] if os.environ.get('JWT_SECRET') else ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(20))
 JWT_ALGORITHM = os.environ.get('JWT_ALGORITHM')
 
 def sign_jwt(user: User) -> Dict[str, str]:
